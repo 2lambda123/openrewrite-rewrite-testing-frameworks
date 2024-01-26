@@ -50,6 +50,6 @@ dependencies {
     testRuntimeOnly("org.testcontainers:testcontainers:latest.release")
     testRuntimeOnly("org.testcontainers:nginx:latest.release")
 
-//    testImplementation("org.hamcrest:hamcrest:latest.release")
+    testImplementation("org.hamcrest:hamcrest:latest.release")
 //    testImplementation("org.assertj:assertj-core:latest.release")
 }
