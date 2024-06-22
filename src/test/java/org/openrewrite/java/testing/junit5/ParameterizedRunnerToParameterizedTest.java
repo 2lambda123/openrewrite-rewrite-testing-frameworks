@@ -580,4 +580,130 @@ class ParameterizedRunnerToParameterizedTest implements RewriteTest {
               }
               """));
     }
+
+    @Issue("https://github.com/openrewrite/rewrite-testing-frameworks/issues/91")
+    @Test
+    void testParameterizedClassWithSuperClass() {
+        rewriteRun(
+          java("""
+          package abc;
+          
+          public class Vet {
+              private Integer id;
+              private String firstName;
+              private String lastName;
+          
+              public void setId(Integer id) {
+                  this.id = id;
+              }
+          
+              public void setFirstName(String firstName) {
+                  this.firstName = firstName;
+              }
+          
+              public void setLastName(String lastName) {
+                  this.lastName = lastName;
+              }
+          }
+          """),
+          java("""
+          package abc;
+          
+          public class BaseTest {
+          
+              protected Integer id;
+          
+              public BaseTest(Integer id) {
+                  this.id = id;
+              }
+          }
+          """, """
+          package abc;
+          
+          public class BaseTest {
+          
+              protected Integer id;
+          
+              public void initBaseTest(Integer id) {
+                  this.id = id;
+              }
+          }
+          """),
+          java("""
+          package abc;
+          
+          import org.junit.Test;
+          import org.junit.runner.RunWith;
+          import org.junit.runners.*;
+          import org.junit.runners.Parameterized.Parameters;
+          
+          import java.util.Arrays;
+          import java.util.List;
+          
+          @RunWith(Parameterized.class)
+          public class VetTests extends BaseTest {
+          
+              private String firstName;
+              private String lastName;
+          
+              public VetTests(String firstName, String lastName, Integer id) {
+                  super(id);
+                  this.firstName = firstName;
+                  this.lastName = lastName;
+              }
+          
+              @Test
+              public void testSerialization() {
+                  Vet vet = new Vet();
+                  vet.setFirstName(firstName);
+                  vet.setLastName(lastName);
+                  vet.setId(id);
+              }
+          
+              @Parameters(name="{index}: {0} {1} - {2}")
+              public static List<Object[]> parameters() {
+                  return Arrays.asList(
+                      new Object[] { "Otis", "TheDog", 124 },
+                      new Object[] { "Garfield", "TheBoss", 126 });
+              }
+          }
+          """, """
+          package abc;
+          
+          import org.junit.jupiter.params.ParameterizedTest;
+          import org.junit.jupiter.params.provider.MethodSource;
+          
+          import java.util.Arrays;
+          import java.util.List;
+          
+          public class VetTests extends BaseTest {
+          
+              private String firstName;
+              private String lastName;
+          
+              public void initVetTests(String firstName, String lastName, Integer id) {
+                  initBaseTest(id);
+                  this.firstName = firstName;
+                  this.lastName = lastName;
+              }
+   
+              @MethodSource("parameters")
+              @ParameterizedTest(name = "{index}: {0} {1} - {2}")
+              public void testSerialization(String firstName, String lastName, Integer id) {
+                  initVetTests(firstName, lastName, id);
+                  Vet vet = new Vet();
+                  vet.setFirstName(firstName);
+                  vet.setLastName(lastName);
+                  vet.setId(id);
+              }
+          
+              public static List<Object[]> parameters() {
+                  return Arrays.asList(
+                      new Object[] { "Otis", "TheDog", 124 },
+                      new Object[] { "Garfield", "TheBoss", 126 });
+              }
+          }
+          """)
+        );
+    }
 }
