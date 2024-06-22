@@ -17,6 +17,7 @@ package org.openrewrite.java.testing.junit5;
 
 import org.openrewrite.*;
 import org.openrewrite.internal.ListUtils;
+import org.openrewrite.internal.lang.NonNull;
 import org.openrewrite.internal.lang.Nullable;
 import org.openrewrite.java.*;
 import org.openrewrite.java.search.UsesType;
@@ -27,6 +28,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
+import static java.util.Objects.requireNonNull;
 import static org.openrewrite.Tree.randomId;
 
 public class ParameterizedRunnerToParameterized extends Recipe {
@@ -69,16 +71,17 @@ public class ParameterizedRunnerToParameterized extends Recipe {
                 List<Statement> constructorParams = (List<Statement>) params.get(CONSTRUCTOR_ARGUMENTS);
                 Map<Integer, Statement> fieldInjectionParams = (Map<Integer, Statement>) params.get(FIELD_INJECTION_ARGUMENTS);
                 String initMethodName = "init" + cd.getSimpleName();
+                TypeTree extendedClass = classDecl.getExtends();
 
                 // Constructor Injected Test
                 if (parametersMethodName != null && constructorParams != null && constructorParams.stream().anyMatch(org.openrewrite.java.tree.J.VariableDeclarations.class::isInstance)) {
-                    doAfterVisit(new ParameterizedRunnerToParameterizedTestsVisitor(classDecl, parametersMethodName, initMethodName, parametersAnnotationArguments, constructorParams, true, ctx));
+                    doAfterVisit(new ParameterizedRunnerToParameterizedTestsVisitor(classDecl, parametersMethodName, initMethodName, parametersAnnotationArguments, constructorParams, true, extendedClass, ctx));
                 }
 
                 // Field Injected Test
                 else if (parametersMethodName != null && fieldInjectionParams != null) {
                     List<Statement> fieldParams = new ArrayList<>(fieldInjectionParams.values());
-                    doAfterVisit(new ParameterizedRunnerToParameterizedTestsVisitor(classDecl, parametersMethodName, initMethodName, parametersAnnotationArguments, fieldParams, false, ctx));
+                    doAfterVisit(new ParameterizedRunnerToParameterizedTestsVisitor(classDecl, parametersMethodName, initMethodName, parametersAnnotationArguments, fieldParams, false, extendedClass, ctx));
                 }
             }
             return cd;
@@ -155,12 +158,18 @@ public class ParameterizedRunnerToParameterized extends Recipe {
         @Nullable
         private final JavaTemplate initMethodDeclarationTemplate;
 
+        @Nullable
+        private final JavaTemplate extendedClassInitMethodTemplate;
+        @Nullable
+        private final JavaType.FullyQualified extendedClassFQN;
+
         public ParameterizedRunnerToParameterizedTestsVisitor(J.ClassDeclaration scope,
                                                               String parametersMethodName,
                                                               String initMethodName,
                                                               @Nullable List<Expression> parameterizedTestAnnotationParameters,
                                                               List<Statement> parameterizedTestMethodParameters,
                                                               boolean isConstructorInjection,
+                                                              @Nullable TypeTree extendedClassFQN,
                                                               ExecutionContext ctx) {
             this.scope = scope;
             this.initMethodName = initMethodName;
@@ -226,6 +235,19 @@ public class ParameterizedRunnerToParameterized extends Recipe {
                         .build();
             } else {
                 this.initMethodDeclarationTemplate = null;
+            }
+
+            // if a parameterized test extends a class a forwarded init call maybe needed
+            if (extendedClassFQN != null) {
+                this.extendedClassFQN = TypeUtils.asFullyQualified(extendedClassFQN.getType());
+                String parentClassName = requireNonNull(this.extendedClassFQN).getClassName();
+                this.extendedClassInitMethodTemplate = JavaTemplate.builder("super.init" + parentClassName + "(#{})")
+                        .contextSensitive()
+                        .javaParser(javaParserBuilder)
+                        .build();
+            } else {
+                this.extendedClassInitMethodTemplate = null;
+                this.extendedClassFQN = null;
             }
         }
 
@@ -356,7 +378,9 @@ public class ParameterizedRunnerToParameterized extends Recipe {
 
             // Change constructor to test init method
             if (initMethodDeclarationTemplate == null && m.isConstructor()) {
+                // change name to initXYZ
                 m = m.withName(m.getName().withSimpleName(initMethodName));
+                // change return type to void
                 m = maybeAutoFormat(m, m.withReturnTypeExpression(new J.Primitive(randomId(), Space.EMPTY, Markers.EMPTY, JavaType.Primitive.Void)),
                         m.getName(), ctx, getCursor().getParentTreeCursor());
 
@@ -373,8 +397,34 @@ public class ParameterizedRunnerToParameterized extends Recipe {
                             .collect(Collectors.toSet());
                     getCursor().dropParentUntil(J.ClassDeclaration.class::isInstance).putMessage("INIT_VARS", fieldNames);
                 }
+
+
             }
             return m;
+        }
+
+        @Override
+        public J.MethodInvocation visitMethodInvocation(J.MethodInvocation method, ExecutionContext ctx) {
+            J.MethodInvocation m = super.visitMethodInvocation(method, ctx);
+            boolean isNotInScope = !getCursor().dropParentUntil(J.ClassDeclaration.class::isInstance).isScopeInPath(scope);
+            if (isNotInScope) {
+                return m;
+            }
+
+            boolean testUsesNoBaseClass = extendedClassInitMethodTemplate == null || extendedClassFQN == null;
+            if (testUsesNoBaseClass) {
+                return m;
+            }
+
+            boolean isSuperCall = m.getMethodType() != null && m.getMethodType().isConstructor() && extendedClassFQN.equals(m.getMethodType().getDeclaringType());
+            if (!isSuperCall) {
+                return m;
+            }
+
+            String superInitMethodParameter = m.getArguments().stream()
+                    .map(Expression::printTrimmed)
+                    .collect(Collectors.joining(" ,"));
+            return this.extendedClassInitMethodTemplate.apply(updateCursor(m), m.getCoordinates().replaceMethod(), superInitMethodParameter);
         }
     }
 }
