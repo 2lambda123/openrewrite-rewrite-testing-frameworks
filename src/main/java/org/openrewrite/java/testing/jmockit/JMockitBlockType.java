@@ -22,6 +22,7 @@ import java.util.Arrays;
 @Getter
 enum JMockitBlockType {
 
+    MockUp,
     Expectations,
     NonStrictExpectations,
     Verifications,
