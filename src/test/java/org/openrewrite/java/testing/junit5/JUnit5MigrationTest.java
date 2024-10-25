@@ -416,4 +416,67 @@ class JUnit5MigrationTest implements RewriteTest {
           )
         );
     }
+
+    @Test
+    void removeAndExcludeJUnit4Dependency() {
+        rewriteRun(
+          //language=xml
+          pomXml(
+            """
+              <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent>
+                      <groupId>org.springframework.boot</groupId>
+                      <artifactId>spring-boot-starter-parent</artifactId>
+                      <version>2.7.5</version>
+                      <relativePath/> <!-- lookup parent from repository -->
+                  </parent>
+                  <groupId>org.example</groupId>
+                  <artifactId>project</artifactId>
+                  <version>0.0.1</version>
+                  <properties>
+                      <my-junit.version>4.13.2</my-junit.version>
+                  </properties>
+                  <dependencies>
+                      <dependency>
+                          <groupId>org.springframework.boot</groupId>
+                          <artifactId>spring-boot-starter-test</artifactId>
+                          <scope>test</scope>
+                      </dependency>
+                      <dependency>
+                          <groupId>junit</groupId>
+                          <artifactId>junit</artifactId>
+                          <version>${my-junit.version}</version>
+                          <scope>test</scope>
+                      </dependency>
+                  </dependencies>
+              </project>
+              """,
+            """
+              <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent>
+                      <groupId>org.springframework.boot</groupId>
+                      <artifactId>spring-boot-starter-parent</artifactId>
+                      <version>2.7.5</version>
+                      <relativePath/> <!-- lookup parent from repository -->
+                  </parent>
+                  <groupId>org.example</groupId>
+                  <artifactId>project</artifactId>
+                  <version>0.0.1</version>
+                  <properties>
+                      <my-junit.version>4.13.2</my-junit.version>
+                  </properties>
+                  <dependencies>
+                      <dependency>
+                          <groupId>org.springframework.boot</groupId>
+                          <artifactId>spring-boot-starter-test</artifactId>
+                          <scope>test</scope>
+                      </dependency>
+                  </dependencies>
+              </project>
+              """
+          )
+        );
+    }
 }
